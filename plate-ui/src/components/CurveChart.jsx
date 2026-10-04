@@ -10,7 +10,8 @@ export function colorForIndex(i) {
 }
 
 // 单格温度随时间变化的折线图（SVG，无第三方依赖）。
-export default function CurveChart({ frames, selected, currentFrame }) {
+// compareFrames/target 用于逆向校准：叠加候选模拟的虚线曲线与目标温度线。
+export default function CurveChart({ frames, selected, currentFrame, compareFrames = null, target = null }) {
   const W = 640;
   const H = 260;
   const PAD = 40;
@@ -24,16 +25,23 @@ export default function CurveChart({ frames, selected, currentFrame }) {
       label: `(${r},${c})`,
       color: colorForIndex(i),
       values: frames.map((f) => parseRational(f[r][c])),
+      compareValues: compareFrames ? compareFrames.map((f) => parseRational(f[r][c])) : null,
     };
   });
+
+  const targetValue = target != null ? parseRational(target) : null;
 
   let ymin = Infinity;
   let ymax = -Infinity;
   for (const s of series) {
-    for (const v of s.values) {
+    for (const v of [...s.values, ...(s.compareValues ?? [])]) {
       if (v < ymin) ymin = v;
       if (v > ymax) ymax = v;
     }
+  }
+  if (targetValue != null && Number.isFinite(targetValue)) {
+    if (targetValue < ymin) ymin = targetValue;
+    if (targetValue > ymax) ymax = targetValue;
   }
   if (!Number.isFinite(ymin)) {
     ymin = 0;
@@ -87,6 +95,32 @@ export default function CurveChart({ frames, selected, currentFrame }) {
               stroke="#333"
               strokeDasharray="4 3"
             />
+            {targetValue != null && Number.isFinite(targetValue) && (
+              <line
+                data-testid="target-line"
+                x1={PAD}
+                y1={y(targetValue)}
+                x2={W - PAD}
+                y2={y(targetValue)}
+                stroke="#b3261e"
+                strokeWidth="1.5"
+                strokeDasharray="2 3"
+              />
+            )}
+            {series.map(
+              (s) =>
+                s.compareValues && (
+                  <polyline
+                    key={`cmp-${s.key}`}
+                    data-testid={`curve-cmp-${s.key.replace(",", "-")}`}
+                    fill="none"
+                    stroke={s.color}
+                    strokeWidth="2"
+                    strokeDasharray="6 4"
+                    points={s.compareValues.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
+                  />
+                )
+            )}
             {series.map((s) => (
               <g key={s.key}>
                 <polyline
@@ -109,6 +143,16 @@ export default function CurveChart({ frames, selected, currentFrame }) {
                 T{s.label}
               </span>
             ))}
+            {compareFrames && (
+              <span className="legend-item" data-testid="legend-compare">
+                实线 = 原模拟，虚线 = 候选
+              </span>
+            )}
+            {targetValue != null && (
+              <span className="legend-item" data-testid="legend-target">
+                红色点线 = 目标温度
+              </span>
+            )}
           </div>
         </>
       )}

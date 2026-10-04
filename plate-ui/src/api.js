@@ -1,5 +1,5 @@
-export async function simulate(payload) {
-  const res = await fetch("/api/simulate", {
+async function post(path, payload) {
+  const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -14,4 +14,12 @@ export async function simulate(payload) {
     throw new Error((data && data.error) || `服务返回 ${res.status}`);
   }
   return data;
+}
+
+export function simulate(payload) {
+  return post("/api/simulate", payload);
+}
+
+export function calibrate(payload) {
+  return post("/api/calibrate", payload);
 }

@@ -19,7 +19,8 @@ function colorFor(v, min, max) {
 }
 
 // 热图：颜色标尺固定为全部帧的最小/最大值，保证动画帧之间可比。
-export default function Heatmap({ frames, frameIdx, blocked, selected, onToggleCell }) {
+// name 用于区分多个热图的 testid；highlight 是需要标出差异的格子集合。
+export default function Heatmap({ frames, frameIdx, blocked, selected, onToggleCell, highlight, name }) {
   const rows = frames[0].length;
   const cols = frames[0][0].length;
   let min = Infinity;
@@ -47,10 +48,11 @@ export default function Heatmap({ frames, frameIdx, blocked, selected, onToggleC
       if (c > 0 && blocked.has(edgeKey(r, c, r, c - 1))) classes.push("blk-l");
       if (r > 0 && blocked.has(edgeKey(r, c, r - 1, c))) classes.push("blk-t");
       if (selected.has(`${r},${c}`)) classes.push("picked");
+      if (highlight && highlight.has(`${r},${c}`)) classes.push("diff");
       cells.push(
         <div
           key={`${r}-${c}`}
-          data-testid={`heat-cell-${r}-${c}`}
+          data-testid={name ? `${name}-cell-${r}-${c}` : `heat-cell-${r}-${c}`}
           data-exact={exact}
           className={classes.join(" ")}
           style={{
@@ -58,7 +60,7 @@ export default function Heatmap({ frames, frameIdx, blocked, selected, onToggleC
             color: t < 0.22 || t > 0.78 ? "#fff" : "#1a1a1a",
           }}
           title={`(${r},${c}) = ${exact}`}
-          onClick={() => onToggleCell(r, c)}
+          onClick={onToggleCell ? () => onToggleCell(r, c) : undefined}
         >
           {formatRational(exact)}
         </div>
@@ -68,7 +70,7 @@ export default function Heatmap({ frames, frameIdx, blocked, selected, onToggleC
   return (
     <div
       className="heatmap"
-      data-testid="heatmap"
+      data-testid={name ? `${name}-heatmap` : "heatmap"}
       style={{ gridTemplateColumns: `repeat(${cols}, minmax(44px, 1fr))` }}
     >
       {cells}

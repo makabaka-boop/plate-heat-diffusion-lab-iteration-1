@@ -2,8 +2,9 @@
 
 from flask import Flask, jsonify, request
 
+from calibration import calibrate
 from simulation import simulate
-from validation import ValidationError, validate_payload
+from validation import ValidationError, validate_calibrate_payload, validate_payload
 
 
 def create_app():
@@ -31,6 +32,17 @@ def create_app():
         except ValidationError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify(simulate(**spec))
+
+    @app.post("/api/calibrate")
+    def calibrate_route():
+        data = request.get_json(silent=True)
+        if data is None:
+            return jsonify({"error": "请求体必须是合法的 JSON"}), 400
+        try:
+            spec = validate_calibrate_payload(data)
+        except ValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(calibrate(**spec))
 
     return app
 

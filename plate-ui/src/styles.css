@@ -302,3 +302,74 @@ button.primary:hover:not(:disabled) {
   border-radius: 3px;
   display: inline-block;
 }
+
+/* ---- 单格逆向校准 ---- */
+.cal-panel {
+  flex-basis: 100%;
+}
+
+.cell-select select {
+  margin: 0 2px;
+}
+
+.target-input {
+  width: 88px;
+  padding: 4px 6px;
+  border: 1px solid #c8ccd4;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.banner.cal-exact {
+  background: #e8f5e9;
+  color: #1b5e20;
+  border: 1px solid #b7e0bb;
+}
+
+.banner.cal-closest {
+  background: #fff7e0;
+  color: #8a6d00;
+  border: 1px solid #f0df9a;
+}
+
+.banner.cal-all {
+  background: #e3f0fd;
+  color: #0d47a1;
+  border: 1px solid #b8d4f5;
+}
+
+.banner.cal-unreachable {
+  background: #fdecea;
+  color: #b3261e;
+  border: 1px solid #f5c6c0;
+}
+
+.cal-compare {
+  border-top: 1px dashed #d5d9e0;
+  margin-top: 10px;
+  padding-top: 6px;
+}
+
+.cal-compare input[type="range"] {
+  flex: 1;
+  min-width: 160px;
+}
+
+.cal-compare-grids {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.cal-compare-grids h3 {
+  margin: 6px 0;
+  font-size: 13px;
+  color: #444;
+  font-weight: 600;
+}
+
+.heat-cell.diff {
+  outline: 2px dashed #7c1d1d;
+  outline-offset: -2px;
+}

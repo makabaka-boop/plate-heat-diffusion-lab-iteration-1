@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { simulate } from "./api.js";
+import { calibrate, simulate } from "./api.js";
 import { edgeFromKey, edgeKey, formatRational } from "./rational.js";
 import GridEditor from "./components/GridEditor.jsx";
 import Heatmap from "./components/Heatmap.jsx";
 import CurveChart from "./components/CurveChart.jsx";
 import PlaybackControls from "./components/PlaybackControls.jsx";
+import CalibrationPanel from "./components/CalibrationPanel.jsx";
 
 const MIN_DIM = 3;
 const MAX_DIM = 12;
@@ -18,6 +19,19 @@ function defaultGrid(rows, cols) {
     for (let dc = 0; dc < 2; dc++) g[r0 + dr][c0 + dc] = "100";
   }
   return g;
+}
+
+// 把编辑器里的字符串网格解析为整数矩阵，失败抛错。
+function parseGrid(grid) {
+  return grid.map((row, r) =>
+    row.map((v, c) => {
+      const n = Number(v);
+      if (v.trim() === "" || !Number.isInteger(n) || n < -100 || n > 100) {
+        throw new Error(`第 ${r + 1} 行第 ${c + 1} 列必须是 -100~100 的整数`);
+      }
+      return n;
+    })
+  );
 }
 
 export default function App() {
@@ -38,14 +52,27 @@ export default function App() {
   const [speed, setSpeed] = useState(400);
   const [selected, setSelected] = useState(() => new Set());
 
+  // 逆向校准：结果只用于对比展示，确认后才写回编辑器。
+  const [calResult, setCalResult] = useState(null);
+  const [calError, setCalError] = useState(null);
+  const [calLoading, setCalLoading] = useState(false);
+  const [calFrame, setCalFrame] = useState(0);
+
   // 请求序号：每次编辑或发起新请求都 +1；
   // 响应返回时序号不匹配说明是过期响应，直接丢弃。
   const reqSeq = useRef(0);
+  // 校准请求独立计数；任何编辑同样使其 +1，编辑期间到达的旧校准响应即失效。
+  const calSeq = useRef(0);
 
   const markEdited = () => {
     reqSeq.current += 1;
+    calSeq.current += 1;
     setPlaying(false);
     setStale(true);
+    // 冻结基线已变化，旧校准结论作废；在途响应将被丢弃，视为求解结束。
+    setCalResult(null);
+    setCalError(null);
+    setCalLoading(false);
   };
 
   const resize = (newRows, newCols) => {
@@ -104,15 +131,7 @@ export default function App() {
     setError(null);
     let gridNums;
     try {
-      gridNums = grid.map((row, r) =>
-        row.map((v, c) => {
-          const n = Number(v);
-          if (v.trim() === "" || !Number.isInteger(n) || n < -100 || n > 100) {
-            throw new Error(`第 ${r + 1} 行第 ${c + 1} 列必须是 -100~100 的整数`);
-          }
-          return n;
-        })
-      );
+      gridNums = parseGrid(grid);
     } catch (e) {
       setError(e.message);
       return;
@@ -140,6 +159,60 @@ export default function App() {
     } finally {
       if (id === reqSeq.current) setLoading(false);
     }
+  };
+
+  // 逆向校准：冻结当前编辑器输入向服务端求解；不影响已有模拟结果。
+  const runCalibration = async ({ adjustR, adjustC, obsR, obsC, obsStep, target }) => {
+    setCalError(null);
+    let gridNums;
+    try {
+      gridNums = parseGrid(grid);
+    } catch (e) {
+      setCalError(e.message);
+      return;
+    }
+    if (!/^[+-]?\d+(\/[+-]?\d+)?$/.test(target.trim())) {
+      setCalError('目标温度必须是整数或 "p/q" 形式的有理数');
+      return;
+    }
+    const payload = {
+      grid: gridNums,
+      blockedEdges: [...blocked].map(edgeFromKey),
+      steps,
+      boundary,
+      adjustCell: { r: adjustR, c: adjustC },
+      observeCell: { r: obsR, c: obsC },
+      observeStep: obsStep,
+      target: target.trim(),
+    };
+    const id = ++calSeq.current;
+    setCalLoading(true);
+    try {
+      const data = await calibrate(payload);
+      if (id !== calSeq.current) return; // 编辑期间到达的旧响应，丢弃
+      setCalResult(data);
+      setCalFrame(data.observeStep);
+    } catch (e) {
+      if (id !== calSeq.current) return;
+      setCalError(e.message || "请求失败");
+      setCalResult(null);
+    } finally {
+      if (id === calSeq.current) setCalLoading(false);
+    }
+  };
+
+  // 确认：按响应回显的冻结坐标写回编辑器（markEdited 会清空校准结果）。
+  const confirmCalibration = () => {
+    if (!calResult || calResult.value == null) return;
+    const { r, c } = calResult.adjustCell;
+    onCellChange(r, c, String(calResult.value));
+  };
+
+  const cancelCalibration = () => {
+    calSeq.current += 1;
+    setCalResult(null);
+    setCalError(null);
+    setCalLoading(false);
   };
 
   // 播放：到最后一帧自动停止。
@@ -329,6 +402,20 @@ export default function App() {
             </div>
           )}
         </section>
+
+        <CalibrationPanel
+          rows={rows}
+          cols={cols}
+          steps={steps}
+          loading={calLoading}
+          error={calError}
+          result={calResult}
+          frame={calFrame}
+          onFrameChange={setCalFrame}
+          onRun={runCalibration}
+          onConfirm={confirmCalibration}
+          onCancel={cancelCalibration}
+        />
       </main>
     </div>
   );
