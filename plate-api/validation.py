@@ -1,4 +1,7 @@
-"""请求体验证：把 JSON 负载转成 simulate() 可用的规范化参数。"""
+"""请求体验证：把 JSON 负载转成 simulate()/calibrate() 可用的规范化参数。"""
+
+import re
+from fractions import Fraction
 
 from simulation import BOUNDARY_MODES, edge_key
 
@@ -114,3 +117,64 @@ def validate_payload(data):
         "steps": _validate_steps(data["steps"]),
         "boundary": _validate_boundary(data["boundary"]),
     }
+
+
+_RATIONAL_RE = re.compile(r"^[+-]?\d+(?:/\d+)?$")
+
+
+def _validate_cell(raw, rows, cols, field):
+    """校验 {'r':..,'c':..} 形式的格坐标，返回 (r, c)。"""
+    if not isinstance(raw, dict):
+        raise ValidationError(f"{field} 必须是包含 r、c 的对象")
+    r, c = raw.get("r"), raw.get("c")
+    if not _is_int(r) or not _is_int(c):
+        raise ValidationError(f"{field}.r / {field}.c 必须是整数")
+    if not (0 <= r < rows and 0 <= c < cols):
+        raise ValidationError(f"{field} 超出网格范围")
+    return r, c
+
+
+def _validate_target(raw):
+    """目标温度：精确有理数，接受整数或 'p/q' 字符串（也接受十进制字符串）。"""
+    if _is_int(raw):
+        return Fraction(raw)
+    if not isinstance(raw, str):
+        raise ValidationError("target 必须是整数或有理数字符串（如 7/4、-3）")
+    text = raw.strip()
+    if not text:
+        raise ValidationError("target 不能为空")
+    try:
+        if _RATIONAL_RE.match(text):
+            numerator, _, denominator = text.partition("/")
+            value = Fraction(int(numerator), int(denominator) if denominator else 1)
+        else:
+            # 仅作为宽容入口接受 "0.25" 之类；最终仍以精确 Fraction 参与计算。
+            value = Fraction(text)
+    except (ZeroDivisionError, ValueError):
+        raise ValidationError("target 必须是合法的有理数（如 7/4、-3）")
+    return value
+
+
+def validate_calibration_payload(data):
+    """验证 POST /api/calibrate 的 JSON 负载。
+
+    返回 dict，可直接 ** 展开传给 calibrate()。
+    网格、阻断边、步数、边界与 /api/simulate 使用同一套冻结基线规则；
+    观测温度在冻结步数对应的末帧采样。
+    """
+    if not isinstance(data, dict):
+        raise ValidationError("请求体必须是 JSON 对象")
+    for field in ("grid", "steps", "boundary", "adjust", "observe", "target"):
+        if field not in data:
+            raise ValidationError(f"缺少 {field} 字段")
+
+    spec = validate_payload(data)
+    rows, cols = len(spec["grid"]), len(spec["grid"][0])
+
+    adjust = _validate_cell(data["adjust"], rows, cols, "adjust")
+    observe = _validate_cell(data["observe"], rows, cols, "observe")
+    target = _validate_target(data["target"])
+
+    spec.update({"adjust": adjust, "observe": observe, "target": target})
+    return spec
+

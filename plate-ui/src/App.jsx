@@ -5,6 +5,7 @@ import GridEditor from "./components/GridEditor.jsx";
 import Heatmap from "./components/Heatmap.jsx";
 import CurveChart from "./components/CurveChart.jsx";
 import PlaybackControls from "./components/PlaybackControls.jsx";
+import CalibrationDialog from "./components/CalibrationDialog.jsx";
 
 const MIN_DIM = 3;
 const MAX_DIM = 12;
@@ -38,9 +39,23 @@ export default function App() {
   const [speed, setSpeed] = useState(400);
   const [selected, setSelected] = useState(() => new Set());
 
+  // 逆向校准对话框的冻结基线快照；null 表示未打开。
+  const [calSnapshot, setCalSnapshot] = useState(null);
+
   // 请求序号：每次编辑或发起新请求都 +1；
   // 响应返回时序号不匹配说明是过期响应，直接丢弃。
   const reqSeq = useRef(0);
+
+  const parseGrid = () =>
+    grid.map((row, r) =>
+      row.map((v, c) => {
+        const n = Number(v);
+        if (v.trim() === "" || !Number.isInteger(n) || n < -100 || n > 100) {
+          throw new Error(`第 ${r + 1} 行第 ${c + 1} 列必须是 -100~100 的整数`);
+        }
+        return n;
+      })
+    );
 
   const markEdited = () => {
     reqSeq.current += 1;
@@ -104,15 +119,7 @@ export default function App() {
     setError(null);
     let gridNums;
     try {
-      gridNums = grid.map((row, r) =>
-        row.map((v, c) => {
-          const n = Number(v);
-          if (v.trim() === "" || !Number.isInteger(n) || n < -100 || n > 100) {
-            throw new Error(`第 ${r + 1} 行第 ${c + 1} 列必须是 -100~100 的整数`);
-          }
-          return n;
-        })
-      );
+      gridNums = parseGrid();
     } catch (e) {
       setError(e.message);
       return;
@@ -140,6 +147,32 @@ export default function App() {
     } finally {
       if (id === reqSeq.current) setLoading(false);
     }
+  };
+
+  // 打开逆向校准：冻结当前网格/阻断边/边界/步数为不可变快照。
+  // 输入非法时给出错误，不打开对话框，也不改动已有模拟。
+  const openCalibration = () => {
+    setError(null);
+    try {
+      const frozenGrid = parseGrid();
+      setPlaying(false);
+      setCalSnapshot({
+        rows,
+        cols,
+        grid: frozenGrid,
+        blockedEdges: [...blocked].map(edgeFromKey),
+        steps,
+        boundary,
+      });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  // 用户在对话框确认后才写回单个可调格初温；写回与普通编辑一致（旧结果置过期）。
+  const applyCalibration = (r, c, value) => {
+    setGrid((g) => g.map((row, i) => (i === r ? row.map((v, j) => (j === c ? String(value) : v)) : row)));
+    markEdited();
   };
 
   // 播放：到最后一帧自动停止。
@@ -249,6 +282,9 @@ export default function App() {
             <button data-testid="run-button" className="primary" onClick={run} disabled={loading}>
               {loading ? "计算中…" : "运行模拟"}
             </button>
+            <button data-testid="calibrate-button" onClick={openCalibration}>
+              单格逆向校准
+            </button>
             <button
               data-testid="clear-blocked"
               onClick={() => {
@@ -330,6 +366,14 @@ export default function App() {
           )}
         </section>
       </main>
+
+      {calSnapshot && (
+        <CalibrationDialog
+          snapshot={calSnapshot}
+          onClose={() => setCalSnapshot(null)}
+          onApply={applyCalibration}
+        />
+      )}
     </div>
   );
 }
